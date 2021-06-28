@@ -1,4 +1,5 @@
 "use strict";
+// From: https://github.com/auth0-samples/jwt-rsa-aws-custom-authorizer
 
 const jwt = require("jsonwebtoken");
 const jwksClient = require("jwks-rsa");
