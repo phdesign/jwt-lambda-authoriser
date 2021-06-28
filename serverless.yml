@@ -17,4 +17,4 @@ functions:
           method: post
           authorizer: auth
   auth:
-    handler: auth.authorise
+    handler: auth.handler

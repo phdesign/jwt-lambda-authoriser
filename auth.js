@@ -1,71 +1,86 @@
 "use strict";
 
-const jwk = require("jsonwebtoken");
-const jwkToPem = require("jwk-to-pem");
-const request = require("request");
+const jwt = require("jsonwebtoken");
+const jwksClient = require("jwks-rsa");
 
-// For Auth0:       https://<project>.auth0.com/
-// refer to:        http://bit.ly/2hoeRXk
-// For AWS Cognito: https://cognito-idp.<region>.amazonaws.com/<user pool id>
-// refer to:        http://amzn.to/2fo77UI
-const iss =
+const TOKEN_ISSUER =
+  "https://cognito-idp.ap-southeast-2.amazonaws.com/ap-southeast-2_UAoFp1sxj";
+const JWKS_URI =
   "https://cognito-idp.ap-southeast-2.amazonaws.com/ap-southeast-2_UAoFp1sxj/.well-known/jwks.json";
+const AUDIENCE = "";
 
-// Generate policy to allow this user on this API:
-const generatePolicy = (principalId, effect, resource) => {
-  const authResponse = {};
-  authResponse.principalId = principalId;
-  if (effect && resource) {
-    const policyDocument = {};
-    policyDocument.Version = "2012-10-17";
-    policyDocument.Statement = [];
-    const statementOne = {};
-    statementOne.Action = "execute-api:Invoke";
-    statementOne.Effect = effect;
-    statementOne.Resource = resource;
-    policyDocument.Statement[0] = statementOne;
-    authResponse.policyDocument = policyDocument;
-  }
-  return authResponse;
+const jwtOptions = {
+  audience: AUDIENCE,
+  issuer: TOKEN_ISSUER,
 };
 
-// Reusable Authorizer function, set on `authorizer` field in serverless.yml
-module.exports.authorise = (event, context, cb) => {
-  console.log("Auth function invoked");
-  if (event.authorizationToken) {
-    // Remove 'bearer ' from token:
-    const token = event.authorizationToken.substring(7);
-    // Make a request to the iss + .well-known/jwks.json URL:
-    request(
-      { url: `${iss}/.well-known/jwks.json`, json: true },
-      (error, response, body) => {
-        if (error || response.statusCode !== 200) {
-          console.log("Request error:", error);
-          cb("Unauthorized");
-        }
-        const keys = body;
-        // Based on the JSON of `jwks` create a Pem:
-        const k = keys.keys[0];
-        const jwkArray = {
-          kty: k.kty,
-          n: k.n,
-          e: k.e,
-        };
-        const pem = jwkToPem(jwkArray);
+const client = jwksClient({
+  cache: true,
+  rateLimit: true,
+  jwksRequestsPerMinute: 10, // Default value
+  jwksUri: JWKS_URI,
+});
 
-        // Verify the token:
-        jwk.verify(token, pem, { issuer: iss }, (err, decoded) => {
-          if (err) {
-            console.log("Unauthorized user:", err.message);
-            cb("Unauthorized");
-          } else {
-            cb(null, generatePolicy(decoded.sub, "Allow", event.methodArn));
-          }
-        });
-      }
-    );
-  } else {
-    console.log("No authorizationToken found in the header.");
-    cb("Unauthorized");
+const getPolicyDocument = (effect, resource) => {
+  const policyDocument = {
+    Version: "2012-10-17", // default version
+    Statement: [
+      {
+        Action: "execute-api:Invoke", // default action
+        Effect: effect,
+        Resource: resource,
+      },
+    ],
+  };
+  return policyDocument;
+};
+
+const getToken = (params) => {
+  if (!params.type || params.type !== "TOKEN") {
+    throw new Error('Expected "event.type" parameter to have value "TOKEN"');
   }
+
+  const tokenString = params.authorizationToken;
+  if (!tokenString) {
+    throw new Error('Expected "event.authorizationToken" parameter to be set');
+  }
+
+  const match = tokenString.match(/^Bearer (.*)$/);
+  if (!match || match.length < 2) {
+    throw new Error(
+      `Invalid Authorization token - ${tokenString} does not match "Bearer .*"`
+    );
+  }
+  return match[1];
+};
+
+const authenticate = async (params) => {
+  console.log(params);
+  const token = getToken(params);
+
+  const decoded = jwt.decode(token, { complete: true });
+  if (!decoded || !decoded.header || !decoded.header.kid) {
+    throw new Error("Invalid token");
+  }
+
+  const key = await client.getSigningKey(decoded.header.kid);
+  const signingKey = key.publicKey || key.rsaPublicKey;
+  jwt.verify(token, signingKey, jwtOptions);
+
+  return {
+    principalId: decoded.sub,
+    policyDocument: getPolicyDocument("Allow", params.methodArn),
+    context: { scope: decoded.scope },
+  };
+};
+
+module.exports.handler = async (event, context, callback) => {
+  let data;
+  try {
+    data = await authenticate(event);
+  } catch (err) {
+    console.log(err);
+    return context.fail("Unauthorized");
+  }
+  return data;
 };
