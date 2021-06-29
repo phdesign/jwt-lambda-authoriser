@@ -4,22 +4,16 @@
 const jwt = require("jsonwebtoken");
 const jwksClient = require("jwks-rsa");
 
-const TOKEN_ISSUER =
-  "https://cognito-idp.ap-southeast-2.amazonaws.com/ap-southeast-2_UAoFp1sxj";
-const JWKS_URI =
-  "https://cognito-idp.ap-southeast-2.amazonaws.com/ap-southeast-2_UAoFp1sxj/.well-known/jwks.json";
-const AUDIENCE = "";
-
 const jwtOptions = {
-  audience: AUDIENCE,
-  issuer: TOKEN_ISSUER,
+  audience: process.env.AUDIENCE,
+  issuer: process.env.TOKEN_ISSUER,
 };
 
 const client = jwksClient({
   cache: true,
   rateLimit: true,
   jwksRequestsPerMinute: 10, // Default value
-  jwksUri: JWKS_URI,
+  jwksUri: process.env.JWKS_URI,
 });
 
 const getPolicyDocument = (effect, resource) => {

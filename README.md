@@ -2,6 +2,10 @@
 
 Sample implementation of an AWS JWT API Gateway Lambda Authoriser using Serverless Framework.
 
+## Configuration
+
+Create a `.env` based off `sample.env` and set correct environment variable. The only required variable is `JWKS_URI`
+
 ## Usage
 
 ### Deployment

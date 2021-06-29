@@ -1,7 +1,9 @@
-service: custom-authoriser
+service: jwt-lambda-authoriser
 
 frameworkVersion: '2'
 
+useDotenv: true
+variablesResolutionMode: 20210326
 
 provider:
   name: aws
@@ -18,3 +20,7 @@ functions:
           authorizer: auth
   auth:
     handler: auth.handler
+    environment:
+      TOKEN_ISSUER: ${env:TOKEN_ISSUER, ""}
+      AUDIENCE: ${env:AUDIENCE, ""}
+      JWKS_URI: ${env:JWKS_URI}
